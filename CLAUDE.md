@@ -15,3 +15,7 @@ Additional Python Best Practices Used in this Project:
 - Python docstring Guide: @/Users/sanhehu/.claude/claude-markdown/pywf-open-source-Python-docstring-guide-CLAUDE.md
 - Cross Reference API Doc Guide: @/Users/sanhehu/.claude/claude-markdown/pywf-open-source-Python-cross-reference-api-doc-guide-CLAUDE.md
 - Document Structure Guide: @/Users/sanhehu/.claude/claude-markdown/pywf-open-source-Python-documentation-structure-guide-CLAUDE.md
+
+Design Patterns:
+
+- Pythonic API Wrapper: @.claude/Pythonic-API-developer-instruction-CLAUDE.md
