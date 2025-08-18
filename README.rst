@@ -137,7 +137,73 @@ Expected output progression:
     After removal: {"Environment": "production", "Owner": "alice"}
     After clearing: {}
 
-**4. Working with Parameter Objects**
+**4. Smart Parameter Updates (Version Management)**
+
+Avoid unnecessary parameter writes and preserve version history with conditional updates. AWS SSM only keeps the last 100 versions - blindly updating parameters during debugging or deployment can quickly exhaust this limit and make older versions inaccessible.
+
+.. code-block:: python
+
+    from simple_aws_ssm_parameter_store.api import put_parameter_if_changed
+    from simple_aws_ssm_parameter_store.constants import ParameterType
+
+    # Smart update - only writes if value actually changed
+    before, after = put_parameter_if_changed(
+        ssm_client=ssm_client,
+        name="/app/database/host",
+        value="prod-db.example.com",
+        type=ParameterType.STRING,
+        overwrite=True
+    )
+
+    # Check what happened
+    if before is None and after is not None:
+        print(f"Parameter created: version {after.version}")
+    elif before is not None and after is None:
+        print(f"No update needed - value unchanged (version {before.version})")
+    elif before is not None and after is not None:
+        print(f"Parameter updated: {before.version} → {after.version}")
+
+Example debugging scenario - avoiding version waste:
+
+.. code-block:: python
+
+    # During debugging, you might run this script multiple times
+    # Without conditional updates, each run would increment the version
+    
+    # ❌ Bad: Always increments version (wastes version history)
+    ssm_client.put_parameter(
+        Name="/app/config/debug",
+        Value="same-value",
+        Type="String",
+        Overwrite=True  # This always creates new version
+    )
+    
+    # ✅ Good: Only increments version when value actually changes
+    put_parameter_if_changed(
+        ssm_client=ssm_client,
+        name="/app/config/debug", 
+        value="same-value",
+        type=ParameterType.STRING,
+        overwrite=True  # Only used when value differs
+    )
+
+Expected output progression:
+
+.. code-block:: console
+
+    # First run - parameter doesn't exist
+    Parameter created: version 1
+    
+    # Second run - same value
+    No update needed - value unchanged (version 1)
+    
+    # Third run - different value  
+    Parameter updated: 1 → 2
+    
+    # Fourth run - same value again
+    No update needed - value unchanged (version 2)
+
+**5. Working with Parameter Objects**
 
 Access parameter metadata through a rich Parameter object with convenient properties.
 

@@ -102,12 +102,24 @@ def put_parameter_if_changed(
     Only if they differ (or if the parameter doesn't exist) does it perform the
     actual write operation.
 
-    This approach provides several benefits:
+    **Why This Matters - Version History Preservation:**
+    
+    AWS SSM Parameter Store only retains the last 100 parameter versions. During
+    development, debugging, or frequent deployments, blindly calling put_parameter()
+    can rapidly consume this version history - even when values haven't actually
+    changed. This can make older parameter versions permanently inaccessible.
+    
+    Consider a debugging scenario where you run a deployment script 50 times with
+    the same configuration values. Without conditional updates, you've just consumed
+    50% of your version history for no benefit. This function prevents such waste.
+
+    **Additional Benefits:**
 
     - **Performance**: Reduces unnecessary API calls and write operations
-    - **Cost optimization**: Avoids charges for redundant parameter updates
+    - **Cost optimization**: Avoids charges for redundant parameter updates  
     - **Change tracking**: Returns clear indication of whether a write occurred
     - **Audit efficiency**: Minimizes noise in CloudTrail logs from no-op updates
+    - **Version conservation**: Preserves parameter version history for actual changes
 
     The function handles SecureString parameters correctly by automatically enabling
     decryption when comparing values, ensuring accurate change detection even for
