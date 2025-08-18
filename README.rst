@@ -50,7 +50,126 @@ Welcome to ``simple_aws_ssm_parameter_store`` Documentation
 .. image:: https://simple-aws-ssm-parameter-store.readthedocs.io/en/latest/_static/simple_aws_ssm_parameter_store-logo.png
     :target: https://simple-aws-ssm-parameter-store.readthedocs.io/en/latest/
 
-Documentation for ``simple_aws_ssm_parameter_store``.
+``simple_aws_ssm_parameter_store`` is a Pythonic wrapper library for AWS SSM Parameter Store that enhances the standard boto3 client with better error handling, existence testing, idempotent operations, and comprehensive tag management. Instead of dealing with exceptions for missing parameters or complex tag operations, this library provides intuitive functions that return meaningful values and handle edge cases gracefully.
+
+
+Quick Tutorial
+------------------------------------------------------------------------------
+**1. Parameter Existence Testing**
+
+Check if a parameter exists without handling exceptions. The function returns ``None`` for non-existent parameters instead of raising ``ParameterNotFound`` exceptions.
+
+.. code-block:: python
+
+    import boto3
+    from simple_aws_ssm_parameter_store.api import get_parameter
+
+    ssm_client = boto3.client("ssm")
+    
+    # Test if parameter exists
+    param = get_parameter(ssm_client, "/app/database/host")
+    if param is not None:
+        print(f"Parameter exists with value: {param.value}")
+    else:
+        print("Parameter does not exist")
+
+**2. Idempotent Parameter Deletion**
+
+Delete parameters safely without worrying about whether they exist. The function returns ``True`` if deletion occurred, ``False`` if the parameter didn't exist.
+
+.. code-block:: python
+
+    from simple_aws_ssm_parameter_store import delete_parameter
+
+    # Safe to call multiple times
+    deleted = delete_parameter(ssm_client, "/app/temp/config")
+    if deleted:
+        print("Parameter was deleted")
+    else:
+        print("Parameter didn't exist")
+    
+    # Call again - no exception raised
+    deleted = delete_parameter(ssm_client, "/app/temp/config")
+    print(f"Second deletion attempt: {deleted}")
+
+**3. Comprehensive Tag Management**
+
+Manage parameter tags with intuitive functions for getting, updating, and replacing tags.
+
+.. code-block:: python
+
+    from simple_aws_ssm_parameter_store.api import (
+        get_parameter_tags,
+        update_parameter_tags, 
+        put_parameter_tags,
+        remove_parameter_tags
+    )
+
+    # Get all tags (returns empty dict if no tags)
+    tags = get_parameter_tags(ssm_client, "/app/config")
+    print(f"Current tags: {tags}")
+
+    # Add/update specific tags (partial update)
+    update_parameter_tags(ssm_client, "/app/config", {
+        "Environment": "production",
+        "Team": "platform"
+    })
+
+    # Replace all tags (full replacement)
+    put_parameter_tags(ssm_client, "/app/config", {
+        "Environment": "production",
+        "Owner": "alice"
+    })
+
+    # Remove specific tags
+    remove_parameter_tags(ssm_client, "/app/config", ["Team"])
+
+    # Remove all tags
+    put_parameter_tags(ssm_client, "/app/config", {})
+
+Expected output progression:
+
+.. code-block:: console
+
+    Current tags: {}
+    After update: {"Environment": "production", "Team": "platform"}
+    After replacement: {"Environment": "production", "Owner": "alice"}
+    After removal: {"Environment": "production", "Owner": "alice"}
+    After clearing: {}
+
+**4. Working with Parameter Objects**
+
+Access parameter metadata through a rich Parameter object with convenient properties.
+
+.. code-block:: python
+
+    # Create a parameter first
+    ssm_client.put_parameter(
+        Name="/app/database/password",
+        Value="secret123",
+        Type="SecureString"
+    )
+
+    # Get parameter with decryption
+    param = get_parameter(ssm_client, "/app/database/password", with_decryption=True)
+    
+    print(f"Name: {param.name}")
+    print(f"Value: {param.value}")
+    print(f"Type: {param.type}")
+    print(f"Version: {param.version}")
+    print(f"Is SecureString: {param.is_secure_string_type}")
+    print(f"ARN: {param.arn}")
+
+Expected output:
+
+.. code-block:: console
+
+    Name: /app/database/password
+    Value: secret123
+    Type: SecureString
+    Version: 1
+    Is SecureString: True
+    ARN: arn:aws:ssm:us-east-1:123456789012:parameter/app/database/password
 
 
 .. _install:
