@@ -64,6 +64,7 @@ dev = [
     "wheel>=0.45.0,<1.0.0", # build wheel package
     "build>=1.2.1,<2.0.0", # build source distribution
     "rich>=13.8.1,<14.0.0", # pretty print
+    "boto3-stubs[ssm]>=1.35.99,<2.0.0", # type stubs for boto3, used for type checking
 ]
 
 # ------------------------------------------------------------------------------

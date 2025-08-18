@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 
 """
-https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ssm.html
+Data Model.
 """
 
 import typing as T
 import enum
 import dataclasses
-from func_args.api import REQ, OPT, remove_optional, BaseFrozenModel
+import datetime
+from func_args.api import BaseFrozenModel, T_KWARGS
 
 
 class ParameterType(str, enum.Enum):
@@ -33,49 +34,12 @@ class ParameterTier(str, enum.Enum):
 @dataclasses.dataclass(frozen=True)
 class Parameter(BaseFrozenModel):
     """
+    Represents a parameter in AWS SSM Parameter Store.
 
     - `get_parameter <https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ssm/client/get_parameter.html>`_
+    - `get_parameters <https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ssm/client/get_parameters.html>`_
     - `describe_parameters <https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ssm/client/describe_parameters.html>`_
     - `put_parameter <https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ssm/client/put_parameter.html>`_
-
-    get_parameter
-    {
-        'Name': 'string',
-        'Type': 'String'|'StringList'|'SecureString',
-        'Value': 'string',
-        'Version': 123,
-        'Selector': 'string',
-        'SourceResult': 'string',
-        'LastModifiedDate': datetime(2015, 1, 1),
-        'ARN': 'string',
-        'DataType': 'string'
-    }
-    describe_parameters
-    {
-        'Name': 'string',
-        'ARN': 'string',
-        'Type': 'String'|'StringList'|'SecureString',
-        'KeyId': 'string',
-        'LastModifiedDate': datetime(2015, 1, 1),
-        'LastModifiedUser': 'string',
-        'Description': 'string',
-        'AllowedPattern': 'string',
-        'Version': 123,
-        'Tier': 'Standard'|'Advanced'|'Intelligent-Tiering',
-        'Policies': [
-            {
-                'PolicyText': 'string',
-                'PolicyType': 'string',
-                'PolicyStatus': 'string'
-            },
-        ],
-        'DataType': 'string'
-    }
-    put_parameter
-    {
-        'Version': 123,
-        'Tier': 'Standard'|'Advanced'|'Intelligent-Tiering'
-    }
     """
 
     _data: dict[str, T.Any] = dataclasses.field()
@@ -98,3 +62,88 @@ class Parameter(BaseFrozenModel):
     @property
     def tier(self) -> str | None:
         return self._data.get("Tier")
+
+    @property
+    def value(self) -> str | None:
+        return self._data.get("Value")
+
+    @property
+    def version(self) -> int | None:
+        return self._data.get("Version")
+
+    @property
+    def selector(self) -> str | None:
+        return self._data.get("Selector")
+
+    @property
+    def source_result(self) -> str | None:
+        return self._data.get("SourceResult")
+
+    @property
+    def last_modified_date(self) -> datetime.datetime | None:
+        return self._data.get("LastModifiedDate")
+
+    @property
+    def arn(self) -> str | None:
+        return self._data.get("ARN")
+
+    @property
+    def data_type(self) -> str | None:
+        return self._data.get("DataType")
+
+    @property
+    def key_id(self) -> str | None:
+        return self._data.get("KeyId")
+
+    @property
+    def last_modified_user(self) -> str | None:
+        """Last modified user (from describe_parameters)"""
+        return self._data.get("LastModifiedUser")
+
+    @property
+    def description(self) -> str | None:
+        return self._data.get("Description")
+
+    @property
+    def allowed_pattern(self) -> str | None:
+        return self._data.get("AllowedPattern")
+
+    @property
+    def policies(self) -> T.List[T.Dict[str, str]] | None:
+        return self._data.get("Policies")
+
+    @property
+    def is_string_type(self) -> bool:
+        return self.type == ParameterType.STRING
+
+    @property
+    def is_string_list_type(self) -> bool:
+        return self.type == ParameterType.STRING_LIST
+
+    @property
+    def is_secure_string_type(self) -> bool:
+        return self.type == ParameterType.SECURE_STRING
+
+    @property
+    def is_standard_tier(self) -> bool:
+        return self.tier == ParameterTier.STANDARD
+
+    @property
+    def is_advanced_tier(self) -> bool:
+        return self.tier == ParameterTier.ADVANCED
+
+    @property
+    def is_intelligent_tiering(self) -> bool:
+        return self.tier == ParameterTier.INTELLIGENT_TIERING
+
+    @property
+    def core_data(self) -> T_KWARGS:
+        """Essential parameter information in standardized format"""
+        return {
+            "name": self.name,
+            "type": self.type,
+            "tier": self.tier,
+            "version": self.version,
+            "last_modified_date": self.last_modified_date,
+            "arn": self.arn,
+        }
