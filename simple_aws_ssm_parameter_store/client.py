@@ -93,17 +93,87 @@ def put_parameter_if_changed(
     policies: str | None = OPT,
     data_type: str | None = OPT,
 ) -> tuple[Parameter | None, Parameter | None]:
+    """
+    Put a parameter only if its value has changed (conditional write).
+
+    This function implements an optimized "get-then-put" operation that avoids
+    unnecessary write operations when the parameter value hasn't changed. It first
+    retrieves the current parameter value and compares it with the desired value.
+    Only if they differ (or if the parameter doesn't exist) does it perform the
+    actual write operation.
+
+    This approach provides several benefits:
+
+    - **Performance**: Reduces unnecessary API calls and write operations
+    - **Cost optimization**: Avoids charges for redundant parameter updates
+    - **Change tracking**: Returns clear indication of whether a write occurred
+    - **Audit efficiency**: Minimizes noise in CloudTrail logs from no-op updates
+
+    The function handles SecureString parameters correctly by automatically enabling
+    decryption when comparing values, ensuring accurate change detection even for
+    encrypted parameters.
+
+    Example usage::
+
+        # Create or update parameter only if value changed
+        before, after = put_parameter_if_changed(
+            ssm_client=client,
+            name="/app/database/host",
+            value="new-db-host.example.com",
+            type=ParameterType.STRING
+        )
+        
+        if after is not None:
+            print(f"Parameter updated: version {after.version}")
+        else:
+            print("No update needed - value unchanged")
+
+    Return value interpretation:
+
+    - ``(None, Parameter)``: Parameter didn't exist, was created
+    - ``(Parameter, None)``: Parameter existed with same value, no update
+    - ``(Parameter, Parameter)``: Parameter existed with different value, was updated
+
+    Ref:
+
+    - `put_parameter <https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ssm.html#SSM.Client.put_parameter>`_
+
+    :param ssm_client: SSM client
+    :param name: parameter name (e.g., "/app/database/host")
+    :param value: parameter value to set
+    :param description: parameter description
+    :param type: parameter type (String, StringList, SecureString)
+    :param tier: parameter tier (Standard, Advanced, Intelligent-Tiering)
+    :param key_id: KMS key ID for SecureString encryption
+    :param overwrite: whether to overwrite existing parameter (required for updates)
+    :param allowed_pattern: regex pattern for parameter validation
+    :param tags: dictionary of tag key-value pairs
+    :param policies: parameter policies (JSON string)
+    :param data_type: parameter data type (e.g., "text", "aws:ec2:image")
+
+    :returns: Tuple of (before_parameter, after_parameter) where:
+        - before_parameter: Parameter object before operation (None if didn't exist)
+        - after_parameter: Parameter object after operation (None if no write occurred)
+    """
+    # Determine if decryption is needed for SecureString comparison
     if isinstance(type, ParameterType):
         with_decryption = type is ParameterType.SECURE_STRING
-    else:
+    else:  # pragma: no cover
         with_decryption = False
+    
+    # Get current parameter value to compare against desired value
     before_param = get_parameter(ssm_client, name, with_decryption=with_decryption)
+    
+    # Determine if write operation is needed
     if before_param is not None:
-        do_flag = not (value == before_param.value)
+        # Parameter exists - only write if value has changed
+        should_write = not (value == before_param.value)
     else:
-        do_flag = True
+        # Parameter doesn't exist - always write
+        should_write = True
 
-    if do_flag:
+    if should_write:
+        # Prepare parameters for put_parameter API call
         kwargs = dict(
             Name=name,
             Value=value,
@@ -113,14 +183,36 @@ def put_parameter_if_changed(
             KeyId=key_id,
             Overwrite=overwrite,
             AllowedPattern=allowed_pattern,
-            Tags=encode_tags(tags) if isinstance(tags, dict) else None,
+            Tags=encode_tags(tags) if isinstance(tags, dict) else tags,
             Policies=policies,
             DataType=data_type,
         )
+        
+        # Execute the parameter write operation
         response = ssm_client.put_parameter(**remove_optional(**kwargs))
-        after_param = Parameter(_data=response)
+        
+        # Construct Parameter object from put_parameter response and input data
+        # Note: put_parameter response only contains Version, not full parameter data
+        param_data = {
+            "Name": name,
+            "Value": value,
+            "Type": type.value if isinstance(type, ParameterType) else type,
+            "Version": response.get("Version"),
+        }
+        
+        # Add optional fields if provided
+        if isinstance(tier, ParameterTier):
+            param_data["Tier"] = tier.value
+        elif tier is not None:
+            param_data["Tier"] = tier
+        if description is not None:
+            param_data["Description"] = description
+            
+        after_param = Parameter(_data=param_data)
     else:
+        # No write needed - value hasn't changed
         after_param = None
+        
     return before_param, after_param
 
 

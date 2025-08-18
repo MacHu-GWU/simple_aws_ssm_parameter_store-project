@@ -15,6 +15,12 @@ x.y.z (Backlog)
 **Miscellaneous**
 
 
+0.2.1 (2025-08-18)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+- Add the following public APIs:
+    - ``simple_aws_ssm_parameter_store.api.put_parameter_if_changed``
+
+
 0.1.1 (2025-08-18)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 - First release

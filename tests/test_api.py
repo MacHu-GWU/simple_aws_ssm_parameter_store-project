@@ -13,6 +13,7 @@ def test():
     _ = api.decode_tags
     _ = api.Parameter
     _ = api.get_parameter
+    _ = api.put_parameter_if_changed
     _ = api.delete_parameter
     _ = api.get_parameter_tags
     _ = api.remove_parameter_tags

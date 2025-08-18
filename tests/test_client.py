@@ -2,13 +2,14 @@
 
 from simple_aws_ssm_parameter_store.client import (
     get_parameter,
+    put_parameter_if_changed,
     delete_parameter,
     get_parameter_tags,
     remove_parameter_tags,
     update_parameter_tags,
     put_parameter_tags,
 )
-from simple_aws_ssm_parameter_store.constants import ParameterType
+from simple_aws_ssm_parameter_store.constants import ParameterType, ParameterTier
 
 from simple_aws_ssm_parameter_store.tests.mock_aws import BaseMockAwsTest
 
@@ -152,6 +153,86 @@ class Test(BaseMockAwsTest):
         )
         assert tags == {}
 
+    def test_put_parameter_if_changed(self):
+        name = "test_put_parameter_if_changed"
+        
+        # Test 1: Parameter doesn't exist - should create it
+        before_param, after_param = put_parameter_if_changed(
+            ssm_client=self.ssm_client,
+            name=name,
+            value="v1",
+            type=ParameterType.STRING,
+            tier=ParameterTier.INTELLIGENT_TIERING,
+        )
+        assert before_param is None  # Parameter didn't exist before
+        assert after_param is not None  # Parameter was created
+        assert after_param.name == name
+        assert after_param.value == "v1"
+        
+        # Verify parameter was actually created
+        param = get_parameter(
+            ssm_client=self.ssm_client,
+            name=name,
+        )
+        assert param.value == "v1"
+        
+        # Test 2: Parameter exists with same value - should not update
+        before_param, after_param = put_parameter_if_changed(
+            ssm_client=self.ssm_client,
+            name=name,
+            value="v1",  # Same value
+            type=ParameterType.STRING,
+        )
+        assert before_param is not None  # Parameter existed before
+        assert before_param.value == "v1"
+        assert after_param is None  # No update occurred
+        
+        # Test 3: Parameter exists with different value - should update
+        before_param, after_param = put_parameter_if_changed(
+            ssm_client=self.ssm_client,
+            name=name,
+            value="v2",  # Different value
+            type=ParameterType.STRING,
+            overwrite=True,
+        )
+        assert before_param is not None  # Parameter existed before
+        assert before_param.value == "v1"
+        assert after_param is not None  # Update occurred
+        assert after_param.name == name
+        assert after_param.value == "v2"
+        
+        # Verify parameter was actually updated
+        param = get_parameter(
+            ssm_client=self.ssm_client,
+            name=name,
+        )
+        assert param.value == "v2"
+        
+        # Test 4: SecureString parameter with decryption
+        secure_name = "test_secure_param"
+        before_param, after_param = put_parameter_if_changed(
+            ssm_client=self.ssm_client,
+            name=secure_name,
+            value="secret123",
+            type=ParameterType.SECURE_STRING,
+        )
+        assert before_param is None  # Parameter didn't exist before
+        assert after_param is not None  # Parameter was created
+        
+        # Test with same SecureString value - should not update
+        before_param, after_param = put_parameter_if_changed(
+            ssm_client=self.ssm_client,
+            name=secure_name,
+            value="secret123",  # Same value
+            type=ParameterType.SECURE_STRING,
+        )
+        assert before_param is not None  # Parameter existed before
+        assert after_param is None  # No update occurred
+        
+        # Cleanup
+        delete_parameter(self.ssm_client, name)
+        delete_parameter(self.ssm_client, secure_name)
+
 
 if __name__ == "__main__":
     from simple_aws_ssm_parameter_store.tests import run_cov_test
@@ -159,5 +240,5 @@ if __name__ == "__main__":
     run_cov_test(
         __file__,
         "simple_aws_ssm_parameter_store.client",
-        preview=False,
+        preview=True,
     )
