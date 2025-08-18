@@ -15,6 +15,20 @@ x.y.z (Backlog)
 **Miscellaneous**
 
 
-0.1.1 (1970-01-01)
+0.1.1 (2025-08-18)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 - First release
+- Add the following public APIs:
+    - ``simple_aws_ssm_parameter_store.api.ParameterType``
+    - ``simple_aws_ssm_parameter_store.api.ParameterTier``
+    - ``simple_aws_ssm_parameter_store.api.ResourceType``
+    - ``simple_aws_ssm_parameter_store.api.DEFAULT_KMS_KEY``
+    - ``simple_aws_ssm_parameter_store.api.encode_tags``
+    - ``simple_aws_ssm_parameter_store.api.decode_tags``
+    - ``simple_aws_ssm_parameter_store.api.Parameter``
+    - ``simple_aws_ssm_parameter_store.api.get_parameter``
+    - ``simple_aws_ssm_parameter_store.api.delete_parameter``
+    - ``simple_aws_ssm_parameter_store.api.get_parameter_tags``
+    - ``simple_aws_ssm_parameter_store.api.remove_parameter_tags``
+    - ``simple_aws_ssm_parameter_store.api.update_parameter_tags``
+    - ``simple_aws_ssm_parameter_store.api.put_parameter_tags``
