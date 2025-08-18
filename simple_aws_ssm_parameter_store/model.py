@@ -6,7 +6,7 @@ Data Model.
 
 import typing as T
 import dataclasses
-import datetime
+from datetime import datetime
 from func_args.api import BaseFrozenModel, T_KWARGS
 
 from .constants import ParameterType, ParameterTier
@@ -61,7 +61,7 @@ class Parameter(BaseFrozenModel):
         return self._data.get("SourceResult")
 
     @property
-    def last_modified_date(self) -> datetime.datetime | None:
+    def last_modified_date(self) -> datetime | None:
         return self._data.get("LastModifiedDate")
 
     @property
