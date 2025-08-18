@@ -14,6 +14,7 @@ class TestParameter:
                 "Name": "my_parameter",
                 "Type": ParameterType.STRING,
                 "Tier": ParameterTier.STANDARD,
+                "ARN": "arn:aws:ssm:us-east-1:123456789012:parameter/my_parameter",
             }
         )
         assert param.response == param._data
@@ -32,6 +33,8 @@ class TestParameter:
         _ = param.description
         _ = param.allowed_pattern
         _ = param.policies
+        assert param.aws_account_id == "123456789012"
+        assert param.aws_region == "us-east-1"
         assert param.is_string_type is True
         assert param.is_string_list_type is False
         assert param.is_secure_string_type is False

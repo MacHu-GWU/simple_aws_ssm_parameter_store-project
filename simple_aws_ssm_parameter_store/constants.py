@@ -21,3 +21,24 @@ class ParameterTier(str, enum.Enum):
     STANDARD = "Standard"
     ADVANCED = "Advanced"
     INTELLIGENT_TIERING = "Intelligent-Tiering"
+
+
+class ResourceType(str, enum.Enum):
+    """
+    Resource type parameter value enum for:
+
+    - `list_tags_for_resource <https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ssm.html#SSM.Client.list_tags_for_resource>`_
+    """
+
+    DOCUMENT = "Document"
+    MANAGED_INSTANCE = "ManagedInstance"
+    MAINTENANCE_WINDOW = "MaintenanceWindow"
+    PARAMETER = "Parameter"
+    PATCH_BASELINE = "PatchBaseline"
+    OPS_ITEM = "OpsItem"
+    OPS_METADATA = "OpsMetadata"
+    AUTOMATION = "Automation"
+    ASSOCIATION = "Association"
+
+
+DEFAULT_KMS_KEY = "alias/aws/ssm"

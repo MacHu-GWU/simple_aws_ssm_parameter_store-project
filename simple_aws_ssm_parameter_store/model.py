@@ -94,6 +94,14 @@ class Parameter(BaseFrozenModel):
         return self._data.get("Policies")
 
     @property
+    def aws_account_id(self) -> str:
+        return self.arn.split(":")[4]
+
+    @property
+    def aws_region(self) -> str:
+        return self.arn.split(":")[3]
+
+    @property
     def is_string_type(self) -> bool:
         return self.type == ParameterType.STRING
 
