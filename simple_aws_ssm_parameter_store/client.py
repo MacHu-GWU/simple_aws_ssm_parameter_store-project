@@ -12,9 +12,11 @@ and idempotent operations.
 import typing as T
 
 import botocore.exceptions
-from func_args.api import remove_optional
+from func_args.api import OPT, remove_optional
 
 from .constants import (
+    ParameterType,
+    ParameterTier,
     ResourceType,
 )
 from .utils import (
@@ -38,7 +40,7 @@ def get_parameter(
     Get a parameter by name with built-in existence testing.
 
     This function provides a convenient way to retrieve parameters while gracefully
-    handling non-existent parameters. Unlike the raw boto3 client which raises 
+    handling non-existent parameters. Unlike the raw boto3 client which raises
     exceptions for missing parameters, this function returns None, making it ideal
     for existence testing and conditional parameter access.
 
@@ -77,6 +79,51 @@ def get_parameter(
         raise  # pragma: no cover
 
 
+def put_parameter_if_changed(
+    ssm_client: "SSMClient",
+    name: str,
+    value: str,
+    description: str | None = OPT,
+    type: ParameterType | None = OPT,
+    tier: ParameterTier | None = OPT,
+    key_id: str | None = OPT,
+    overwrite: bool = False,
+    allowed_pattern: str | None = OPT,
+    tags: dict[str, str] | None = OPT,
+    policies: str | None = OPT,
+    data_type: str | None = OPT,
+) -> tuple[Parameter | None, Parameter | None]:
+    if isinstance(type, ParameterType):
+        with_decryption = type is ParameterType.SECURE_STRING
+    else:
+        with_decryption = False
+    before_param = get_parameter(ssm_client, name, with_decryption=with_decryption)
+    if before_param is not None:
+        do_flag = not (value == before_param.value)
+    else:
+        do_flag = True
+
+    if do_flag:
+        kwargs = dict(
+            Name=name,
+            Value=value,
+            Description=description,
+            Type=type.value if isinstance(type, ParameterType) else type,
+            Tier=tier.value if isinstance(tier, ParameterTier) else tier,
+            KeyId=key_id,
+            Overwrite=overwrite,
+            AllowedPattern=allowed_pattern,
+            Tags=encode_tags(tags) if isinstance(tags, dict) else None,
+            Policies=policies,
+            DataType=data_type,
+        )
+        response = ssm_client.put_parameter(**remove_optional(**kwargs))
+        after_param = Parameter(_data=response)
+    else:
+        after_param = None
+    return before_param, after_param
+
+
 def delete_parameter(
     ssm_client: "SSMClient",
     name: str,
@@ -84,7 +131,7 @@ def delete_parameter(
     """
     Delete a parameter by name with idempotent behavior.
 
-    This function provides idempotent parameter deletion - it can be called multiple 
+    This function provides idempotent parameter deletion - it can be called multiple
     times safely without raising errors. Unlike the raw boto3 client which raises
     ParameterNotFound exceptions, this function returns False for non-existent
     parameters, making it safe to use in cleanup operations and automation scripts.
@@ -239,7 +286,7 @@ def put_parameter_tags(
             "Environment": "production",
             "Owner": "platform-team"
         })
-        
+
         # Remove all tags
         put_parameter_tags(client, "/app/config", {})
 
