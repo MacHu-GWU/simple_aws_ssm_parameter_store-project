@@ -240,5 +240,5 @@ if __name__ == "__main__":
     run_cov_test(
         __file__,
         "simple_aws_ssm_parameter_store.client",
-        preview=True,
+        preview=False,
     )

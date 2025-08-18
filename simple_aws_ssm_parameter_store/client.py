@@ -103,12 +103,12 @@ def put_parameter_if_changed(
     actual write operation.
 
     **Why This Matters - Version History Preservation:**
-    
+
     AWS SSM Parameter Store only retains the last 100 parameter versions. During
     development, debugging, or frequent deployments, blindly calling put_parameter()
     can rapidly consume this version history - even when values haven't actually
     changed. This can make older parameter versions permanently inaccessible.
-    
+
     Consider a debugging scenario where you run a deployment script 50 times with
     the same configuration values. Without conditional updates, you've just consumed
     50% of your version history for no benefit. This function prevents such waste.
@@ -116,7 +116,6 @@ def put_parameter_if_changed(
     **Additional Benefits:**
 
     - **Performance**: Reduces unnecessary API calls and write operations
-    - **Cost optimization**: Avoids charges for redundant parameter updates  
     - **Change tracking**: Returns clear indication of whether a write occurred
     - **Audit efficiency**: Minimizes noise in CloudTrail logs from no-op updates
     - **Version conservation**: Preserves parameter version history for actual changes
@@ -134,7 +133,7 @@ def put_parameter_if_changed(
             value="new-db-host.example.com",
             type=ParameterType.STRING
         )
-        
+
         if after is not None:
             print(f"Parameter updated: version {after.version}")
         else:
@@ -172,10 +171,10 @@ def put_parameter_if_changed(
         with_decryption = type is ParameterType.SECURE_STRING
     else:  # pragma: no cover
         with_decryption = False
-    
+
     # Get current parameter value to compare against desired value
     before_param = get_parameter(ssm_client, name, with_decryption=with_decryption)
-    
+
     # Determine if write operation is needed
     if before_param is not None:
         # Parameter exists - only write if value has changed
@@ -199,32 +198,26 @@ def put_parameter_if_changed(
             Policies=policies,
             DataType=data_type,
         )
-        
+
         # Execute the parameter write operation
         response = ssm_client.put_parameter(**remove_optional(**kwargs))
-        
+
         # Construct Parameter object from put_parameter response and input data
-        # Note: put_parameter response only contains Version, not full parameter data
-        param_data = {
-            "Name": name,
-            "Value": value,
-            "Type": type.value if isinstance(type, ParameterType) else type,
-            "Version": response.get("Version"),
-        }
-        
-        # Add optional fields if provided
-        if isinstance(tier, ParameterTier):
-            param_data["Tier"] = tier.value
-        elif tier is not None:
-            param_data["Tier"] = tier
-        if description is not None:
-            param_data["Description"] = description
-            
+        # Note: put_parameter response only contains Version and Tier, not full parameter data
+        param_data = dict(
+            Name=name,
+            Value=value,
+            Description=description,
+            Type=type.value if isinstance(type, ParameterType) else type,
+            Tier=tier.value if isinstance(tier, ParameterTier) else tier,
+        )
+        param_data = remove_optional(**param_data)
+        param_data.update(response)
         after_param = Parameter(_data=param_data)
     else:
         # No write needed - value hasn't changed
         after_param = None
-        
+
     return before_param, after_param
 
 
