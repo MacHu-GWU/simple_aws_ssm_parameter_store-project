@@ -87,7 +87,6 @@ def put_parameter_if_changed(
     type: ParameterType | None = OPT,
     tier: ParameterTier | None = OPT,
     key_id: str | None = OPT,
-    overwrite: bool = False,
     allowed_pattern: str | None = OPT,
     tags: dict[str, str] | None = OPT,
     policies: str | None = OPT,
@@ -174,9 +173,9 @@ def put_parameter_if_changed(
 
     # Get current parameter value to compare against desired value
     before_param = get_parameter(ssm_client, name, with_decryption=with_decryption)
-
+    is_param_exists = before_param is not None
     # Determine if write operation is needed
-    if before_param is not None:
+    if is_param_exists:
         # Parameter exists - only write if value has changed
         should_write = not (value == before_param.value)
     else:
@@ -192,12 +191,14 @@ def put_parameter_if_changed(
             Type=type.value if isinstance(type, ParameterType) else type,
             Tier=tier.value if isinstance(tier, ParameterTier) else tier,
             KeyId=key_id,
-            Overwrite=overwrite,
             AllowedPattern=allowed_pattern,
             Tags=encode_tags(tags) if isinstance(tags, dict) else tags,
             Policies=policies,
             DataType=data_type,
         )
+        if is_param_exists:
+            kwargs["Overwrite"] = True  # Required for updates
+            kwargs.pop("Tags")
 
         # Execute the parameter write operation
         response = ssm_client.put_parameter(**remove_optional(**kwargs))

@@ -193,7 +193,6 @@ class Test(BaseMockAwsTest):
             name=name,
             value="v2",  # Different value
             type=ParameterType.STRING,
-            overwrite=True,
         )
         assert before_param is not None  # Parameter existed before
         assert before_param.value == "v1"
