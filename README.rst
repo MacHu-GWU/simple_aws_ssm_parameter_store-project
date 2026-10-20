@@ -50,192 +50,106 @@ Welcome to ``simple_aws_ssm_parameter_store`` Documentation
 .. image:: https://simple-aws-ssm-parameter-store.readthedocs.io/en/latest/_static/simple_aws_ssm_parameter_store-logo.png
     :target: https://simple-aws-ssm-parameter-store.readthedocs.io/en/latest/
 
-``simple_aws_ssm_parameter_store`` is a Pythonic wrapper library for AWS SSM Parameter Store that enhances the standard boto3 client with better error handling, existence testing, idempotent operations, and comprehensive tag management. Instead of dealing with exceptions for missing parameters or complex tag operations, this library provides intuitive functions that return meaningful values and handle edge cases gracefully.
+``simple_aws_ssm_parameter_store`` is a small, Pythonic layer over the boto3 SSM client for `AWS Systems Manager Parameter Store <https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html>`_. It does not replace boto3: every function takes your own ``ssm_client`` and smooths over the parts of the raw API that are awkward to use.
+
+What it gives you over the raw client:
+
+- **Existence check without exceptions:** ``get_parameter`` returns ``None`` instead of raising ``ParameterNotFound``.
+- **Idempotent delete:** ``delete_parameter`` returns ``True`` or ``False`` and is safe to call twice.
+- **Writes only on change:** ``put_parameter_if_changed`` skips the write when the value is the same, so re-running a script does not use up the 100 versions SSM keeps per parameter.
+- **Tags as a dict:** get, add, replace, or remove tags with plain ``dict[str, str]`` instead of ``[{"Key": ..., "Value": ...}]`` lists.
+- **A typed result:** a ``Parameter`` object with properties such as ``value``, ``version``, ``arn``, and ``aws_account_id``.
 
 
-Quick Tutorial
+Quick Tour
 ------------------------------------------------------------------------------
-**1. Parameter Existence Testing**
-
-Check if a parameter exists without handling exceptions. The function returns ``None`` for non-existent parameters instead of raising ``ParameterNotFound`` exceptions.
+Every public name is imported from ``simple_aws_ssm_parameter_store.api``:
 
 .. code-block:: python
 
     import boto3
+    from simple_aws_ssm_parameter_store.api import ParameterType
     from simple_aws_ssm_parameter_store.api import get_parameter
+    from simple_aws_ssm_parameter_store.api import put_parameter_if_changed
+    from simple_aws_ssm_parameter_store.api import delete_parameter
 
     ssm_client = boto3.client("ssm")
-    
-    # Test if parameter exists
-    param = get_parameter(ssm_client, "/app/database/host")
-    if param is not None:
-        print(f"Parameter exists with value: {param.value}")
+
+**Read a parameter, or learn that it does not exist**
+
+.. code-block:: python
+
+    param = get_parameter(ssm_client, "/app/database/password", with_decryption=True)
+    if param is None:
+        print("not found")
     else:
-        print("Parameter does not exist")
+        print(param.value, param.version, param.is_secure_string_type)
 
-**2. Idempotent Parameter Deletion**
-
-Delete parameters safely without worrying about whether they exist. The function returns ``True`` if deletion occurred, ``False`` if the parameter didn't exist.
+**Write only when the value changed**
 
 .. code-block:: python
 
-    from simple_aws_ssm_parameter_store import delete_parameter
-
-    # Safe to call multiple times
-    deleted = delete_parameter(ssm_client, "/app/temp/config")
-    if deleted:
-        print("Parameter was deleted")
-    else:
-        print("Parameter didn't exist")
-    
-    # Call again - no exception raised
-    deleted = delete_parameter(ssm_client, "/app/temp/config")
-    print(f"Second deletion attempt: {deleted}")
-
-**3. Comprehensive Tag Management**
-
-Manage parameter tags with intuitive functions for getting, updating, and replacing tags.
-
-.. code-block:: python
-
-    from simple_aws_ssm_parameter_store.api import (
-        get_parameter_tags,
-        update_parameter_tags, 
-        put_parameter_tags,
-        remove_parameter_tags
-    )
-
-    # Get all tags (returns empty dict if no tags)
-    tags = get_parameter_tags(ssm_client, "/app/config")
-    print(f"Current tags: {tags}")
-
-    # Add/update specific tags (partial update)
-    update_parameter_tags(ssm_client, "/app/config", {
-        "Environment": "production",
-        "Team": "platform"
-    })
-
-    # Replace all tags (full replacement)
-    put_parameter_tags(ssm_client, "/app/config", {
-        "Environment": "production",
-        "Owner": "alice"
-    })
-
-    # Remove specific tags
-    remove_parameter_tags(ssm_client, "/app/config", ["Team"])
-
-    # Remove all tags
-    put_parameter_tags(ssm_client, "/app/config", {})
-
-Expected output progression:
-
-.. code-block:: console
-
-    Current tags: {}
-    After update: {"Environment": "production", "Team": "platform"}
-    After replacement: {"Environment": "production", "Owner": "alice"}
-    After removal: {"Environment": "production", "Owner": "alice"}
-    After clearing: {}
-
-**4. Smart Parameter Updates (Version Management)**
-
-Avoid unnecessary parameter writes and preserve version history with conditional updates. AWS SSM only keeps the last 100 versions - blindly updating parameters during debugging or deployment can quickly exhaust this limit and make older versions inaccessible.
-
-.. code-block:: python
-
-    from simple_aws_ssm_parameter_store.api import put_parameter_if_changed
-    from simple_aws_ssm_parameter_store.constants import ParameterType
-
-    # Smart update - only writes if value actually changed
     before, after = put_parameter_if_changed(
         ssm_client=ssm_client,
         name="/app/database/host",
         value="prod-db.example.com",
         type=ParameterType.STRING,
-        overwrite=True
+        tags={"Team": "platform"},  # applied only when the parameter is created
     )
 
-    # Check what happened
-    if before is None and after is not None:
-        print(f"Parameter created: version {after.version}")
-    elif before is not None and after is None:
-        print(f"No update needed - value unchanged (version {before.version})")
-    elif before is not None and after is not None:
-        print(f"Parameter updated: {before.version} → {after.version}")
+The result tells you what happened:
 
-Example debugging scenario - avoiding version waste:
+==========================  =========================================
+``(before, after)``         Meaning
+==========================  =========================================
+``(None, Parameter)``       Created, ``after.version == 1``
+``(Parameter, None)``       Value unchanged, nothing written
+``(Parameter, Parameter)``  Updated from ``before.version`` to ``after.version``
+==========================  =========================================
+
+For a ``SecureString``, pass ``type=ParameterType.SECURE_STRING``: the current value is then read decrypted, so the comparison is correct.
+
+**Delete, whether or not it exists**
 
 .. code-block:: python
 
-    # During debugging, you might run this script multiple times
-    # Without conditional updates, each run would increment the version
-    
-    # ❌ Bad: Always increments version (wastes version history)
-    ssm_client.put_parameter(
-        Name="/app/config/debug",
-        Value="same-value",
-        Type="String",
-        Overwrite=True  # This always creates new version
-    )
-    
-    # ✅ Good: Only increments version when value actually changes
-    put_parameter_if_changed(
-        ssm_client=ssm_client,
-        name="/app/config/debug", 
-        value="same-value",
-        type=ParameterType.STRING,
-        overwrite=True  # Only used when value differs
-    )
+    delete_parameter(ssm_client, "/app/temp/config")  # True: it was deleted
+    delete_parameter(ssm_client, "/app/temp/config")  # False: it was already gone
 
-Expected output progression:
-
-.. code-block:: console
-
-    # First run - parameter doesn't exist
-    Parameter created: version 1
-    
-    # Second run - same value
-    No update needed - value unchanged (version 1)
-    
-    # Third run - different value  
-    Parameter updated: 1 → 2
-    
-    # Fourth run - same value again
-    No update needed - value unchanged (version 2)
-
-**5. Working with Parameter Objects**
-
-Access parameter metadata through a rich Parameter object with convenient properties.
+**Manage tags as a dict**
 
 .. code-block:: python
 
-    # Create a parameter first
-    ssm_client.put_parameter(
-        Name="/app/database/password",
-        Value="secret123",
-        Type="SecureString"
-    )
+    from simple_aws_ssm_parameter_store.api import get_parameter_tags
+    from simple_aws_ssm_parameter_store.api import update_parameter_tags
+    from simple_aws_ssm_parameter_store.api import put_parameter_tags
+    from simple_aws_ssm_parameter_store.api import remove_parameter_tags
 
-    # Get parameter with decryption
-    param = get_parameter(ssm_client, "/app/database/password", with_decryption=True)
-    
-    print(f"Name: {param.name}")
-    print(f"Value: {param.value}")
-    print(f"Type: {param.type}")
-    print(f"Version: {param.version}")
-    print(f"Is SecureString: {param.is_secure_string_type}")
-    print(f"ARN: {param.arn}")
+    name = "/app/config"
 
-Expected output:
+    update_parameter_tags(ssm_client, name, {"Env": "prod", "Team": "platform"})
+    # tags are now {"Env": "prod", "Team": "platform"}
 
-.. code-block:: console
+    put_parameter_tags(ssm_client, name, {"Env": "prod", "Owner": "alice"})
+    # tags are now {"Env": "prod", "Owner": "alice"}
 
-    Name: /app/database/password
-    Value: secret123
-    Type: SecureString
-    Version: 1
-    Is SecureString: True
-    ARN: arn:aws:ssm:us-east-1:123456789012:parameter/app/database/password
+    remove_parameter_tags(ssm_client, name, ["Owner"])
+    # tags are now {"Env": "prod"}
+
+    put_parameter_tags(ssm_client, name, {})
+    # tags are now {}
+
+    get_parameter_tags(ssm_client, name)  # read them back as a dict
+
+- ``update_parameter_tags`` adds or overwrites the given keys and keeps the others.
+- ``put_parameter_tags`` makes the given dict the full tag set; ``{}`` removes every tag.
+- ``remove_parameter_tags`` removes only the given keys.
+
+Learn more:
+
+- `Getting Started <https://simple-aws-ssm-parameter-store.readthedocs.io/en/latest/01-Getting-Started/index.html>`_: every function, run step by step with real output.
+- `Design Notes <https://simple-aws-ssm-parameter-store.readthedocs.io/en/latest/02-Design-Notes/index.html>`_: why the functions behave this way, and the cases to watch for.
+- `API reference <https://simple-aws-ssm-parameter-store.readthedocs.io/en/latest/py-modindex.html>`_: every argument.
 
 
 .. _install:
@@ -243,7 +157,7 @@ Expected output:
 Install
 ------------------------------------------------------------------------------
 
-``simple_aws_ssm_parameter_store`` is released on PyPI, so all you need is to:
+``simple_aws_ssm_parameter_store`` is released on PyPI and needs Python 3.11 or newer:
 
 .. code-block:: console
 
