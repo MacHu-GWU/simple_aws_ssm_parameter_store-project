@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 
 from simple_aws_ssm_parameter_store.model import Parameter
-from simple_aws_ssm_parameter_store.constants import (
-    ParameterType,
-    ParameterTier,
-)
+from simple_aws_ssm_parameter_store.constants import ParameterType
+from simple_aws_ssm_parameter_store.constants import ParameterTier
 
 
 class TestParameter:

@@ -7,9 +7,11 @@ Data Model.
 import typing as T
 import dataclasses
 from datetime import datetime
-from func_args.api import BaseFrozenModel, T_KWARGS
+from func_args.api import BaseFrozenModel
+from func_args.api import T_KWARGS
 
-from .constants import ParameterType, ParameterTier
+from .constants import ParameterType
+from .constants import ParameterTier
 
 
 @dataclasses.dataclass(frozen=True)

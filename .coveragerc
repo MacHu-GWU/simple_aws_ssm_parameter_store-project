@@ -5,7 +5,6 @@ omit =
     simple_aws_ssm_parameter_store/docs/*
     simple_aws_ssm_parameter_store/tests/*
     simple_aws_ssm_parameter_store/vendor/*
-    simple_aws_ssm_parameter_store/_version.py
     simple_aws_ssm_parameter_store/cli.py
     simple_aws_ssm_parameter_store/paths.py
 

@@ -12,20 +12,15 @@ and idempotent operations.
 import typing as T
 
 import botocore.exceptions
-from func_args.api import OPT, remove_optional
+from func_args.api import OPT
+from func_args.api import remove_optional
 
-from .constants import (
-    ParameterType,
-    ParameterTier,
-    ResourceType,
-)
-from .utils import (
-    encode_tags,
-    decode_tags,
-)
-from .model import (
-    Parameter,
-)
+from .constants import ParameterType
+from .constants import ParameterTier
+from .constants import ResourceType
+from .utils import encode_tags
+from .utils import decode_tags
+from .model import Parameter
 
 if T.TYPE_CHECKING:  # pragma: no cover
     from mypy_boto3_ssm.client import SSMClient
@@ -306,7 +301,8 @@ def remove_parameter_tags(
     other tags unchanged. It's useful for selective tag cleanup without affecting
     the entire tag set.
 
-    Example:
+    Example::
+
         # Remove only the "Environment" and "Team" tags
         remove_parameter_tags(client, "/app/config", ["Environment", "Team"])
 
@@ -338,7 +334,8 @@ def update_parameter_tags(
     other existing tags unchanged. This is useful for adding metadata without
     affecting the entire tag set.
 
-    Example:
+    Example::
+
         # Add/update only specific tags, keeping others intact
         update_parameter_tags(client, "/app/config", {
             "Environment": "production",

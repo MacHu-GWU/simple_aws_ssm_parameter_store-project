@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
-from simple_aws_ssm_parameter_store.utils import encode_tags, decode_tags
+from simple_aws_ssm_parameter_store.utils import encode_tags
+from simple_aws_ssm_parameter_store.utils import decode_tags
 
 
 def test_encode_tags():
