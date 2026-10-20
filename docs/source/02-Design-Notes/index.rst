@@ -22,40 +22,53 @@ With the raw client, "does this parameter exist?" means catching ``ParameterNotF
 Only "not found" is turned into a return value. Every other error, such as a missing permission or throttling, is raised as the usual ``botocore.exceptions.ClientError``.
 
 
-Writing Only When the Value Changes
+Writing Only When Something Changes
 ------------------------------------------------------------------------------
 SSM keeps only the last 100 versions of a parameter. A deployment script that calls ``put_parameter`` with ``Overwrite=True`` on every run creates a new version each time, even when the value is the same, and after 100 runs the older versions are gone.
 
-:func:`~simple_aws_ssm_parameter_store.client.put_parameter_if_changed` reads the current value first and writes only if it differs. Its ``(before, after)`` result says what happened:
+:func:`~simple_aws_ssm_parameter_store.client.put_parameter_if_changed` treats its arguments as the desired state of the parameter. It reads the parameter, compares, and calls ``put_parameter`` only if the parameter does not exist or differs, so running the same call again writes nothing. Its ``(before, after)`` result says what happened:
 
 ==========================  ==========================================================
 ``(before, after)``         Meaning
 ==========================  ==========================================================
 ``(None, Parameter)``       The parameter did not exist and was created.
-``(Parameter, None)``       The value was the same; nothing was written.
-``(Parameter, Parameter)``  The value differed and was overwritten; the version went up.
+``(Parameter, None)``       The parameter already matched; nothing was written.
+``(Parameter, Parameter)``  The parameter differed; a new version was written.
 ==========================  ==========================================================
 
-Two things follow from "read, then write":
+What is compared:
 
-- **One extra read per call.** This is the cost of keeping the version history.
-- **It is not atomic.** If two processes write the same parameter at the same moment, both may read the old value and both may write. The function is meant for deployment and configuration scripts, not for a value that many writers update concurrently.
+- **The value, always.** The current value is read with decryption, so a ``SecureString`` is compared by its plain value, whether you pass ``type`` as ``ParameterType.SECURE_STRING``, as the string ``"SecureString"``, or not at all. Reading it needs ``kms:Decrypt`` on its KMS key. For ``String`` and ``StringList``, AWS ignores the decryption flag.
+- **Every other argument you pass:** ``description``, ``type``, ``tier``, ``key_id``, ``allowed_pattern``, ``policies``, and ``data_type``. An argument you leave out means "keep whatever the parameter has", and is not compared. A changed description with the same value is a change, and writes a new version.
+- ``get_parameter`` does not return ``description``, ``tier``, ``key_id``, ``allowed_pattern``, or ``policies``. When you pass one of them, the function makes one extra ``describe_parameters`` call to read them.
+
+Two exceptions to "compare what you pass":
+
+- ``tier=ParameterTier.INTELLIGENT_TIERING`` is not compared: AWS stores such a parameter as Standard or Advanced, so the two never match.
+- ``policies`` is compared as parsed JSON, ignoring key order and policy order. If either side cannot be parsed, it counts as changed, and the parameter is written.
+
+``key_id`` is compared as a string, so pass it in the same form every time: an alias and the ARN of the same key count as different.
 
 The ``after`` object is built from the arguments you passed and the ``put_parameter`` response, which holds only ``Version`` and ``Tier``. Fields such as ``ARN`` or ``LastModifiedDate`` are not in it; call :func:`~simple_aws_ssm_parameter_store.client.get_parameter` when you need them.
 
 
-SecureString: Always Pass the Type
+Concurrent Writers: Best Effort
 ------------------------------------------------------------------------------
-To compare a ``SecureString`` correctly, :func:`~simple_aws_ssm_parameter_store.client.put_parameter_if_changed` must read the current value decrypted. It does so only when ``type`` is ``ParameterType.SECURE_STRING``, a member of the :class:`~simple_aws_ssm_parameter_store.constants.ParameterType` enum.
+SSM has no conditional write: ``put_parameter`` cannot say "only if the current version is still 3". The read and the write are two calls, so the result is as consistent as the API allows, and no more:
 
-.. warning::
+- **Two writers create the same parameter.** The create is sent without ``Overwrite``, so the second one fails with ``ParameterAlreadyExists`` instead of replacing the first. The function then reads and compares once more: if the other writer stored the same value, nothing is written; otherwise it is updated.
+- **Two writers update an existing parameter at the same time.** Both may read the old value, and both may write: the last write wins, and two versions are used. Preventing that is outside this library. Serialize such writers yourself, for example with one deployment pipeline that runs one job at a time.
 
-    If you leave ``type`` out, or pass the plain string ``"SecureString"``, the current value is read encrypted. The ciphertext never equals your plain value, so the parameter is written, and its version goes up, on every call.
 
-
-Tags on Create, Tag Functions After
+Tags Are Part of the Desired State
 ------------------------------------------------------------------------------
-``put_parameter`` does not accept tags when it overwrites an existing parameter. So the ``tags`` argument of :func:`~simple_aws_ssm_parameter_store.client.put_parameter_if_changed` is applied only when the call creates the parameter, and is ignored on an update. To change the tags of an existing parameter, use one of the three tag functions:
+When you pass ``tags`` to :func:`~simple_aws_ssm_parameter_store.client.put_parameter_if_changed`, they become the parameter's full tag set:
+
+- **On create,** they are sent with ``put_parameter``.
+- **On an existing parameter,** ``put_parameter`` does not accept tags together with ``Overwrite``, so the function reads the current tags and, only if they differ, replaces them with :func:`~simple_aws_ssm_parameter_store.client.put_parameter_tags`. This happens whether or not the value changed. Tags have no versions, so a tag change alone still returns ``after`` as ``None``.
+- **Left out,** the tags are kept as they are. Pass ``tags={}`` to remove them all.
+
+To change tags without touching the parameter, use the tag functions:
 
 .. list-table::
     :header-rows: 1

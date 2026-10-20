@@ -10,6 +10,7 @@ and idempotent operations.
 """
 
 import typing as T
+import json
 
 import botocore.exceptions
 from func_args.api import OPT
@@ -74,6 +75,204 @@ def get_parameter(
         raise  # pragma: no cover
 
 
+def _get_parameter_metadata(
+    ssm_client: "SSMClient",
+    name: str,
+) -> dict[str, T.Any]:
+    """
+    Get the metadata of a parameter that ``get_parameter`` does not return,
+    such as ``Description``, ``Tier``, ``KeyId``, ``AllowedPattern``, and ``Policies``.
+
+    Ref:
+
+    - `describe_parameters <https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ssm.html#SSM.Client.describe_parameters>`_
+
+    :param ssm_client: SSM client
+    :param name: parameter name (e.g., "/app/database/host")
+
+    :return: The ``describe_parameters`` item of the parameter, or an empty dict
+        if the parameter does not exist.
+    """
+    response = ssm_client.describe_parameters(
+        ParameterFilters=[
+            {
+                "Key": "Name",
+                "Option": "Equals",
+                "Values": [name],
+            },
+        ],
+    )
+    for item in response.get("Parameters", []):
+        if item["Name"] == name:
+            return item
+    return {}
+
+
+def _is_same_policies(
+    desired: str,
+    current: list[dict[str, str]] | None,
+) -> bool:
+    """
+    Compare the ``Policies`` JSON string passed to ``put_parameter`` with the
+    ``Policies`` list returned by ``describe_parameters``, ignoring key order
+    and policy order.
+
+    :param desired: the JSON array string to pass to ``put_parameter``
+    :param current: the ``Policies`` list of a ``describe_parameters`` item
+
+    :return: True only if both hold the same policies. Anything that cannot be
+        parsed counts as different, so the caller writes rather than skips.
+    """
+    try:
+        desired_policies = json.loads(desired)
+        if isinstance(desired_policies, dict):
+            desired_policies = [desired_policies]
+        current_policies = []
+        for policy in current or []:
+            current_policies.append(json.loads(policy["PolicyText"]))
+        desired_keys = sorted(json.dumps(p, sort_keys=True) for p in desired_policies)
+        current_keys = sorted(json.dumps(p, sort_keys=True) for p in current_policies)
+    except (ValueError, KeyError, TypeError):
+        return False
+    return desired_keys == current_keys
+
+
+def _is_parameter_changed(
+    ssm_client: "SSMClient",
+    before_param: Parameter,
+    value: str,
+    description: str | None = OPT,
+    type: str | None = OPT,
+    tier: str | None = OPT,
+    key_id: str | None = OPT,
+    allowed_pattern: str | None = OPT,
+    policies: str | None = OPT,
+    data_type: str | None = OPT,
+) -> bool:
+    """
+    Check whether an existing parameter differs from the desired state.
+
+    Only the arguments that are passed are compared; an argument left as ``OPT``
+    means "keep whatever is there". ``describe_parameters`` is called only when
+    one of the fields it alone returns is passed.
+
+    :param before_param: the current parameter, read with decryption
+    :param type: the parameter type as a plain string (e.g. "SecureString")
+    :param tier: the parameter tier as a plain string (e.g. "Standard")
+
+    :return: True if ``put_parameter`` has to be called.
+    """
+    if value != before_param.value:
+        return True
+    if type is not OPT and type != before_param.type:
+        return True
+    if data_type is not OPT and data_type != before_param.data_type:
+        return True
+
+    # These fields are only returned by describe_parameters
+    metadata_args = [description, tier, key_id, allowed_pattern, policies]
+    if all(arg is OPT for arg in metadata_args):
+        return False
+    metadata = _get_parameter_metadata(ssm_client, before_param.name)
+    if description is not OPT and description != metadata.get("Description", ""):
+        return True
+    # An Intelligent-Tiering parameter is stored as Standard or Advanced,
+    # so there is nothing to compare it with
+    if tier is not OPT and tier != ParameterTier.INTELLIGENT_TIERING.value:
+        if tier != metadata.get("Tier"):
+            return True
+    if key_id is not OPT and key_id != metadata.get("KeyId"):
+        return True
+    if allowed_pattern is not OPT:
+        if allowed_pattern != metadata.get("AllowedPattern", ""):
+            return True
+    if policies is not OPT:
+        if not _is_same_policies(policies, metadata.get("Policies")):
+            return True
+    return False
+
+
+def _put_parameter_if_changed(
+    ssm_client: "SSMClient",
+    name: str,
+    value: str,
+    description: str | None = OPT,
+    type: str | None = OPT,
+    tier: str | None = OPT,
+    key_id: str | None = OPT,
+    allowed_pattern: str | None = OPT,
+    tags: dict[str, str] | None = OPT,
+    policies: str | None = OPT,
+    data_type: str | None = OPT,
+) -> tuple[Parameter | None, Parameter | None]:
+    """
+    One read-compare-write round of :func:`put_parameter_if_changed`, with
+    ``type`` and ``tier`` already converted to plain strings.
+
+    It raises the ``ParameterAlreadyExists`` error when another writer creates
+    the parameter between the read and the write.
+    """
+    # Always decrypt: the flag is ignored for String and StringList, and a
+    # SecureString can only be compared by its plain value
+    before_param = get_parameter(ssm_client, name, with_decryption=True)
+    is_param_exists = before_param is not None
+
+    if is_param_exists:
+        should_write = _is_parameter_changed(
+            ssm_client=ssm_client,
+            before_param=before_param,
+            value=value,
+            description=description,
+            type=type,
+            tier=tier,
+            key_id=key_id,
+            allowed_pattern=allowed_pattern,
+            policies=policies,
+            data_type=data_type,
+        )
+    else:
+        should_write = True
+
+    if should_write is False:
+        return before_param, None
+
+    kwargs = dict(
+        Name=name,
+        Value=value,
+        Description=description,
+        Type=type,
+        Tier=tier,
+        KeyId=key_id,
+        AllowedPattern=allowed_pattern,
+        Policies=policies,
+        DataType=data_type,
+    )
+    if is_param_exists:
+        # put_parameter does not accept Tags together with Overwrite;
+        # the caller syncs the tags of an existing parameter separately
+        kwargs["Overwrite"] = True
+    elif isinstance(tags, dict) and len(tags):
+        kwargs["Tags"] = encode_tags(tags)
+    # Without Overwrite, this fails with ParameterAlreadyExists instead of
+    # replacing a parameter that another writer has just created
+    response = ssm_client.put_parameter(**remove_optional(**kwargs))
+
+    # put_parameter only returns Version and Tier, so build the rest from the input
+    if type is OPT and is_param_exists:
+        type = before_param.type
+    param_data = dict(
+        Name=name,
+        Value=value,
+        Description=description,
+        Type=type,
+        Tier=tier,
+    )
+    param_data = remove_optional(**param_data)
+    param_data.update(response)
+    after_param = Parameter(_data=param_data)
+    return before_param, after_param
+
+
 def put_parameter_if_changed(
     ssm_client: "SSMClient",
     name: str,
@@ -88,13 +287,12 @@ def put_parameter_if_changed(
     data_type: str | None = OPT,
 ) -> tuple[Parameter | None, Parameter | None]:
     """
-    Put a parameter only if its value has changed (conditional write).
+    Make a parameter match the desired state, writing a new version only when
+    something actually changed (conditional write).
 
-    This function implements an optimized "get-then-put" operation that avoids
-    unnecessary write operations when the parameter value hasn't changed. It first
-    retrieves the current parameter value and compares it with the desired value.
-    Only if they differ (or if the parameter doesn't exist) does it perform the
-    actual write operation.
+    The function reads the parameter, compares it with the arguments you pass,
+    and calls ``put_parameter`` only if the parameter does not exist or differs.
+    Running it again with the same arguments writes nothing.
 
     **Why This Matters - Version History Preservation:**
 
@@ -103,20 +301,31 @@ def put_parameter_if_changed(
     can rapidly consume this version history - even when values haven't actually
     changed. This can make older parameter versions permanently inaccessible.
 
-    Consider a debugging scenario where you run a deployment script 50 times with
-    the same configuration values. Without conditional updates, you've just consumed
-    50% of your version history for no benefit. This function prevents such waste.
+    **What is compared:**
 
-    **Additional Benefits:**
+    - ``value``, always. The current value is read with decryption, so a
+      ``SecureString`` is compared by its plain value whether or not you pass
+      ``type``. This needs ``kms:Decrypt`` on its KMS key.
+    - ``description``, ``type``, ``tier``, ``key_id``, ``allowed_pattern``,
+      ``policies``, and ``data_type``, but only the ones you pass. An argument you
+      leave out keeps whatever the parameter has. ``tier=INTELLIGENT_TIERING``
+      is not compared, because AWS stores such a parameter as Standard or Advanced.
 
-    - **Performance**: Reduces unnecessary API calls and write operations
-    - **Change tracking**: Returns clear indication of whether a write occurred
-    - **Audit efficiency**: Minimizes noise in CloudTrail logs from no-op updates
-    - **Version conservation**: Preserves parameter version history for actual changes
+    **Tags:**
 
-    The function handles SecureString parameters correctly by automatically enabling
-    decryption when comparing values, ensuring accurate change detection even for
-    encrypted parameters.
+    When you pass ``tags``, they become the parameter's full tag set: on create
+    they are sent with ``put_parameter``; on an existing parameter they are
+    replaced with :func:`put_parameter_tags`, only if they differ. Tag changes
+    do not create a parameter version. Leave ``tags`` out to keep the tags as they are.
+
+    **Concurrency:**
+
+    The read and the write are separate calls, and SSM has no conditional write,
+    so this is a best effort. If another writer creates the parameter between
+    the read and the write, the create fails with ``ParameterAlreadyExists``;
+    the function then reads and compares once more. Two writers that update an
+    existing parameter at the same time can still both write: serialize such
+    writers outside this library.
 
     Example usage::
 
@@ -136,8 +345,8 @@ def put_parameter_if_changed(
     Return value interpretation:
 
     - ``(None, Parameter)``: Parameter didn't exist, was created
-    - ``(Parameter, None)``: Parameter existed with same value, no update
-    - ``(Parameter, Parameter)``: Parameter existed with different value, was updated
+    - ``(Parameter, None)``: Parameter already matched, nothing was written
+    - ``(Parameter, Parameter)``: Parameter differed, a new version was written
 
     Ref:
 
@@ -150,9 +359,8 @@ def put_parameter_if_changed(
     :param type: parameter type (String, StringList, SecureString)
     :param tier: parameter tier (Standard, Advanced, Intelligent-Tiering)
     :param key_id: KMS key ID for SecureString encryption
-    :param overwrite: whether to overwrite existing parameter (required for updates)
     :param allowed_pattern: regex pattern for parameter validation
-    :param tags: dictionary of tag key-value pairs
+    :param tags: the full tag set of the parameter, as key-value pairs
     :param policies: parameter policies (JSON string)
     :param data_type: parameter data type (e.g., "text", "aws:ec2:image")
 
@@ -160,59 +368,30 @@ def put_parameter_if_changed(
         - before_parameter: Parameter object before operation (None if didn't exist)
         - after_parameter: Parameter object after operation (None if no write occurred)
     """
-    # Determine if decryption is needed for SecureString comparison
-    if isinstance(type, ParameterType):
-        with_decryption = type is ParameterType.SECURE_STRING
-    else:  # pragma: no cover
-        with_decryption = False
+    kwargs = dict(
+        ssm_client=ssm_client,
+        name=name,
+        value=value,
+        description=description,
+        type=type.value if isinstance(type, ParameterType) else type,
+        tier=tier.value if isinstance(tier, ParameterTier) else tier,
+        key_id=key_id,
+        allowed_pattern=allowed_pattern,
+        tags=tags,
+        policies=policies,
+        data_type=data_type,
+    )
+    try:
+        before_param, after_param = _put_parameter_if_changed(**kwargs)
+    except botocore.exceptions.ClientError as e:
+        if e.response["Error"]["Code"] != "ParameterAlreadyExists":
+            raise  # pragma: no cover
+        # Another writer created it between our read and write: compare again
+        before_param, after_param = _put_parameter_if_changed(**kwargs)
 
-    # Get current parameter value to compare against desired value
-    before_param = get_parameter(ssm_client, name, with_decryption=with_decryption)
-    is_param_exists = before_param is not None
-    # Determine if write operation is needed
-    if is_param_exists:
-        # Parameter exists - only write if value has changed
-        should_write = not (value == before_param.value)
-    else:
-        # Parameter doesn't exist - always write
-        should_write = True
-
-    if should_write:
-        # Prepare parameters for put_parameter API call
-        kwargs = dict(
-            Name=name,
-            Value=value,
-            Description=description,
-            Type=type.value if isinstance(type, ParameterType) else type,
-            Tier=tier.value if isinstance(tier, ParameterTier) else tier,
-            KeyId=key_id,
-            AllowedPattern=allowed_pattern,
-            Tags=encode_tags(tags) if isinstance(tags, dict) else tags,
-            Policies=policies,
-            DataType=data_type,
-        )
-        if is_param_exists:
-            kwargs["Overwrite"] = True  # Required for updates
-            kwargs.pop("Tags")
-
-        # Execute the parameter write operation
-        response = ssm_client.put_parameter(**remove_optional(**kwargs))
-
-        # Construct Parameter object from put_parameter response and input data
-        # Note: put_parameter response only contains Version and Tier, not full parameter data
-        param_data = dict(
-            Name=name,
-            Value=value,
-            Description=description,
-            Type=type.value if isinstance(type, ParameterType) else type,
-            Tier=tier.value if isinstance(tier, ParameterTier) else tier,
-        )
-        param_data = remove_optional(**param_data)
-        param_data.update(response)
-        after_param = Parameter(_data=param_data)
-    else:
-        # No write needed - value hasn't changed
-        after_param = None
+    if isinstance(tags, dict) and before_param is not None:
+        if get_parameter_tags(ssm_client, name) != tags:
+            put_parameter_tags(ssm_client, name, tags)
 
     return before_param, after_param
 

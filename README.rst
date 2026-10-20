@@ -56,7 +56,7 @@ What it gives you over the raw client:
 
 - **Existence check without exceptions:** ``get_parameter`` returns ``None`` instead of raising ``ParameterNotFound``.
 - **Idempotent delete:** ``delete_parameter`` returns ``True`` or ``False`` and is safe to call twice.
-- **Writes only on change:** ``put_parameter_if_changed`` skips the write when the value is the same, so re-running a script does not use up the 100 versions SSM keeps per parameter.
+- **Writes only on change:** ``put_parameter_if_changed`` skips the write when the parameter already matches, so re-running a script does not use up the 100 versions SSM keeps per parameter.
 - **Tags as a dict:** get, add, replace, or remove tags with plain ``dict[str, str]`` instead of ``[{"Key": ..., "Value": ...}]`` lists.
 - **A typed result:** a ``Parameter`` object with properties such as ``value``, ``version``, ``arn``, and ``aws_account_id``.
 
@@ -94,7 +94,7 @@ Every public name is imported from ``simple_aws_ssm_parameter_store.api``:
         name="/app/database/host",
         value="prod-db.example.com",
         type=ParameterType.STRING,
-        tags={"Team": "platform"},  # applied only when the parameter is created
+        tags={"Team": "platform"},  # the full tag set, synced on every call
     )
 
 The result tells you what happened:
@@ -103,11 +103,11 @@ The result tells you what happened:
 ``(before, after)``         Meaning
 ==========================  =========================================
 ``(None, Parameter)``       Created, ``after.version == 1``
-``(Parameter, None)``       Value unchanged, nothing written
-``(Parameter, Parameter)``  Updated from ``before.version`` to ``after.version``
+``(Parameter, None)``       Already matched, nothing written
+``(Parameter, Parameter)``  Changed, from ``before.version`` to ``after.version``
 ==========================  =========================================
 
-For a ``SecureString``, pass ``type=ParameterType.SECURE_STRING``: the current value is then read decrypted, so the comparison is correct.
+Every argument you pass is compared, not only the value, and a ``SecureString`` is compared by its decrypted value. Running the same call again writes nothing.
 
 **Delete, whether or not it exists**
 
