@@ -584,7 +584,7 @@ def put_parameter_tags(
         if not (len(set(existing_tags).difference(set(tags))) == 0):
             remove_parameter_tags(ssm_client, name, list(existing_tags))
         ssm_client.add_tags_to_resource(
-            ResourceType="Parameter",
+            ResourceType=ResourceType.PARAMETER.value,
             ResourceId=name,
             Tags=encode_tags(tags),
         )

@@ -14,7 +14,7 @@ if T.TYPE_CHECKING:  # pragma: no cover
 class MockAwsTestConfig:
     use_mock: bool = dataclasses.field()
     aws_region: str = dataclasses.field()
-    aws_profile: T.Optional[str] = dataclasses.field(default=None)
+    aws_profile: str | None = dataclasses.field(default=None)
 
 
 class BaseMockAwsTest:
