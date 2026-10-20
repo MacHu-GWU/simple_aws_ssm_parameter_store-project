@@ -168,3 +168,17 @@ To upgrade to latest version:
 .. code-block:: console
 
     $ pip install --upgrade simple-aws-ssm-parameter-store
+
+
+.. _use-with-ai-coding-agents:
+
+Use with AI Coding Agents
+------------------------------------------------------------------------------
+
+This repo ships an `Agent Skill <https://code.claude.com/docs/en/skills>`_ that documents the public API of ``simple_aws_ssm_parameter_store``, so an AI coding agent such as Claude Code can use the library without reading its source. It lives in `.claude/skills/pypi-simple_aws_ssm_parameter_store <https://github.com/MacHu-GWU/simple_aws_ssm_parameter_store-project/tree/main/.claude/skills/pypi-simple_aws_ssm_parameter_store>`_. To use it in your project, copy it into your project's ``.claude/skills/`` folder. Run this from your project's root:
+
+.. code-block:: console
+
+    $ git clone --depth 1 https://github.com/MacHu-GWU/simple_aws_ssm_parameter_store-project.git /tmp/simple_aws_ssm_parameter_store-project
+    $ mkdir -p .claude/skills
+    $ cp -R /tmp/simple_aws_ssm_parameter_store-project/.claude/skills/pypi-simple_aws_ssm_parameter_store .claude/skills/
